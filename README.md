@@ -43,6 +43,7 @@ SSH_PORT=22
 - `https://ifconfig.me/ip`
 
 如果目标 VPS 出站受限，可在测试/调试时使用 `PUBLIC_IP_OVERRIDE` 覆盖。
+如果 SSH 监听端口探测存在歧义或被极简环境限制，可使用 `SSH_PORT_OVERRIDE` 覆盖。
 
 ## 不会做的事
 

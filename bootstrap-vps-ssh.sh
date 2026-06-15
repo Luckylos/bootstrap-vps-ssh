@@ -1,13 +1,11 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-HOME=${HOME:-/root}
 TARGET_USER="root"
-ROOT_HOME="/root"
 SSH_PUBKEY='ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICbs++si36y/pN/dKDG5qA/l/K8hEAgvlntcI9koaFzt'
 ROOT_LOGIN_MODE='prohibit-password'
-AUTHORIZED_KEYS_PATH="${AUTHORIZED_KEYS_PATH:-$ROOT_HOME/.ssh/authorized_keys}"
-SSH_DIR="$(dirname "$AUTHORIZED_KEYS_PATH")"
+AUTHORIZED_KEYS_PATH="${AUTHORIZED_KEYS_PATH:-/root/.ssh/authorized_keys}"
+SSH_DIR="${AUTHORIZED_KEYS_PATH%/*}"
 SSHD_CONFIG_PATH="${SSHD_CONFIG_PATH:-/etc/ssh/sshd_config}"
 PUBLIC_IP_OVERRIDE="${PUBLIC_IP_OVERRIDE:-}"
 SSH_PORT_OVERRIDE="${SSH_PORT_OVERRIDE:-}"
@@ -47,7 +45,7 @@ expect_no_args() {
 }
 
 require_root() {
-  if [[ "$(id -u)" -ne 0 ]]; then
+  if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
     err "must run as root"
     exit 1
   fi
@@ -63,18 +61,28 @@ require_command() {
 
 ensure_requirements() {
   local cmd
-  for cmd in awk grep sed curl getent chmod chown mkdir touch install stat dirname; do
+  for cmd in awk grep sed chmod chown mkdir touch; do
     require_command "$cmd"
   done
 
-  if ! command -v ss >/dev/null 2>&1 && ! command -v sshd >/dev/null 2>&1; then
-    err "missing both ss and sshd; cannot detect ssh port"
+  if [[ -z "$PUBLIC_IP_OVERRIDE" ]]; then
+    require_command curl
+  fi
+
+  if [[ -z "$SSH_PORT_OVERRIDE" ]] && ! command -v ss >/dev/null 2>&1 && ! command -v sshd >/dev/null 2>&1; then
+    err "missing both ss and sshd; cannot detect ssh port; set SSH_PORT_OVERRIDE to bypass detection"
     exit 1
   fi
 
   if [[ "$SKIP_SSHD_REPAIR" != "1" ]]; then
     require_command sshd
+    require_command stat
+    require_command install
   fi
+}
+
+key_material() {
+  awk '{print $1 " " $2}' <<< "$1"
 }
 
 validate_pubkey() {
@@ -127,7 +135,7 @@ detect_public_ip() {
     fi
   done
 
-  err "failed to detect public IPv4; set PUBLIC_IP_OVERRIDE if outbound IP lookup is blocked"
+  err "failed to detect public IPv4 after SSH bootstrap; set PUBLIC_IP_OVERRIDE if outbound IP lookup is blocked"
   exit 1
 }
 
@@ -177,7 +185,8 @@ detect_ssh_port() {
     fi
   fi
 
-  SSH_PORT="22"
+  err "failed to determine SSH port; set SSH_PORT_OVERRIDE if detection is ambiguous"
+  exit 1
 }
 
 ensure_ssh_dir() {
@@ -189,13 +198,14 @@ ensure_ssh_dir() {
 }
 
 append_pubkey_if_missing() {
-  if grep -qxF "$SSH_PUBKEY" "$AUTHORIZED_KEYS_PATH" 2>/dev/null; then
+  local target_key
+  target_key="$(key_material "$SSH_PUBKEY")"
+
+  if awk -v target="$target_key" 'index($0, target) {found=1; exit} END {exit(found ? 0 : 1)}' "$AUTHORIZED_KEYS_PATH" 2>/dev/null; then
     return 0
   fi
 
   printf '%s\n' "$SSH_PUBKEY" >> "$AUTHORIZED_KEYS_PATH"
-  chmod 600 "$AUTHORIZED_KEYS_PATH"
-  chown "$TARGET_USER:$TARGET_USER" "$AUTHORIZED_KEYS_PATH"
 }
 
 emit_managed_block() {
@@ -325,12 +335,12 @@ main() {
   require_root
   ensure_requirements
   validate_pubkey
-  detect_public_ip
-  detect_ssh_port
   ensure_ssh_dir
   append_pubkey_if_missing
   repair_sshd_if_needed
   reload_sshd_if_needed
+  detect_ssh_port
+  detect_public_ip
   print_result
 }
 

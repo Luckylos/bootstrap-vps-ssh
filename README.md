@@ -33,6 +33,16 @@ SSH_PORT=22
   - `PubkeyAuthentication yes`
   - `AuthorizedKeysFile .ssh/authorized_keys`
   - `PermitRootLogin prohibit-password`
+- 脚本为**无参数入口**；传入任意位置参数会直接报错退出
+
+## 外部访问说明
+
+脚本为了输出 `SSH_IP`，会主动请求公网 IPv4 查询服务：
+- `https://api.ipify.org`
+- `https://ipv4.icanhazip.com`
+- `https://ifconfig.me/ip`
+
+如果目标 VPS 出站受限，可在测试/调试时使用 `PUBLIC_IP_OVERRIDE` 覆盖。
 
 ## 不会做的事
 
@@ -41,15 +51,12 @@ SSH_PORT=22
 - 不修改 SSH 监听端口
 - 不删除系统日志
 - 不清理探针平台执行记录
-- 不上传任何信息到外部服务
+- 不上传任何信息到第三方存储服务
 
 ## 测试/验证钩子
 
 脚本主入口无参数，但保留了少量环境变量钩子用于本地验证，不是日常使用接口：
 
-- `TARGET_USER`
-- `TARGET_HOME`
-- `SSH_DIR`
 - `AUTHORIZED_KEYS_PATH`
 - `SSHD_CONFIG_PATH`
 - `PUBLIC_IP_OVERRIDE`
@@ -59,4 +66,5 @@ SSH_PORT=22
 
 ## 注意
 
-脚本里必须内置的是 **公钥**，不是私钥。
+- 脚本里必须内置的是 **公钥**，不是私钥。
+- 默认修复 SSH 配置时，本机需要可用的 `sshd` 命令。
